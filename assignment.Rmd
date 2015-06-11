@@ -1,0 +1,135 @@
+---
+title: "Machine Learning Assignment"
+author: "Stephen Checkley"
+date: "June 2015"
+output: html_document
+---
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+6 participants were asked to perform barbell lifts corrects and incorrectly in 5 different ways (A, B, C, D, and E) and data was collected from accelerometers on the belt, forearm, arm, and dumbbell of the participants.
+
+The goal of this project is to predict the manner in which the exercise was performed.
+
+#Obtaining the Exercise Data
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(curl)
+library(caret)
+library(rpart)
+library(rpart.plot)
+require(randomForest)
+library(gplots)
+library(RColorBrewer)
+```
+
+```{r}
+#import the data from the web
+testing_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training_url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+if (!file.exists("pml-testing.csv")) {
+  download.file(testing_url, destfile="pml-testing.csv", method="curl")
+}
+
+if (!file.exists("pml-training.csv")) {
+  download.file(training_url, destfile="pml-training.csv", method="curl")
+}
+
+```
+
+#Importing and Cleaning the Data
+```{r}
+#load the data
+data.testing <- read.csv("pml-testing.csv",na.strings=c("NA", "#DIV/0!"))
+data.training <- read.csv("pml-training.csv",na.strings=c("NA", "#DIV/0!"))
+#View(data.training)
+
+#remove missing values
+data.testing <- data.testing[, colSums(is.na(data.testing)) == 0] 
+data.training <- data.training[, colSums(is.na(data.training)) == 0] 
+
+#remove unnecessary columns
+data.testing <- data.testing[ , !names(data.testing) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window","num_window")]
+data.training <- data.training[ , !names(data.training) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window","num_window")]
+data.testing$problem_id <- NULL
+```
+
+#Exploratory Data Analysis
+```{r}
+data4map <- cor(data.training[, names(data.training) != "classe"])
+my_palette <- colorRampPalette(c("darkblue", "blue", "white", "darkred", "red"))(n = 1000)
+heatmap.2(data4map,
+          col = my_palette,
+          dendrogram="both",
+          density.info = "none",
+          trace="none",
+          margins = c(5,10),
+          key=TRUE,
+          scale="none"
+          )
+```
+
+The heat-map does not show any clear correlation between the variables in the data set and the dendrograms do not show any obvious clustering.
+
+#Preparation for Modelling
+##Data Preparation
+```{r}
+inTrain <- createDataPartition(y = data.training$classe, p = 0.7, list = FALSE)
+data4training <- data.training[inTrain, ] #training subset
+data4testing <- data.training[-inTrain, ] #testing subset
+```
+
+The training data set is split with 70% allocated for training and 30% allocated to model testing.
+
+##Model Preparation
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(doMC)
+```
+```{r}
+registerDoMC(cores = detectCores(logical=FALSE)) #set up parallel workers
+set.seed(8418)
+trControl <- trainControl(method = "cv", number = 10, allowParallel = TRUE, verboseIter = FALSE)
+```
+10-fold Cross validation is set, paralellized across all available CPU cores.
+
+```{r}
+modfit <- train(classe ~ ., data=data4training, method="rf", trControl=trControl, prox=FALSE)
+modfit
+```
+Machine learning is applied to the training data subset using the Random Forest algorithm. The resulting model fit is reported to be 99% accurate using 52 predictors over 13737 samples (see Appendix for a map of the final model tree and details of variable importance).
+
+##Model Validation
+```{r}
+modfit.test <- predict(modfit, newdata = data4testing)
+cfMatrix <- confusionMatrix(data4testing$classe, modfit.test)
+cfMatrix
+
+missClass = function(values, model.test) {
+  sum(model.test != values)/length(values)
+}
+error = missClass(data4testing$classe, modfit.test)
+error
+```
+The model is validated using the training data subset, outputting a confusion matrix to summarize the results of the test. The model reports 99.1% accuracy with 0.9% out of sample error.
+
+#Model Predictions
+Using the real testing data set the model predicts the following exercise classes from 20 observations:
+```{r}
+test.result <- predict(modfit, data.testing)
+test.result
+```
+
+#Appendix
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+tree <- rpart(classe ~ ., data=data4training, method="class")
+```
+```{r}
+prp(tree)
+```
+
+Diagrammatic representation of the final model tree.
+
+```{r}
+varImp(modfit)
+```
+Analysis of variable importance for the model.
