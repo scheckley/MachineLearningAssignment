@@ -6,4 +6,4 @@
 * assignment.html - final compiled html formatted report (download and open in browser)
 * answers - folder containing model predictions obtained using the test data set.
 
-<small> All materials copyrighted stephen checkley 2015 </small>
+<small> © stephen checkley 2015 </small>
